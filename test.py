@@ -1,5 +1,6 @@
 from blessed import Terminal
 import chess
+import chess.engine
 
 term = Terminal()
 board = chess.Board()
@@ -64,6 +65,9 @@ def render_board(selected=None):
 
     print(f" {turn_str}")
 
+ENGINE_PATH = r"C:\Users\binut\Documents\GDrive\Stopckfish_extract\stockfish\stockfish-windows-x86-64-universal.exe"
+engine = chess.engine.SimpleEngine.popen_uci(ENGINE_PATH)
+
 def parse_click(x,y):
 
     #COORDINATE LOGIC
@@ -76,6 +80,15 @@ def parse_click(x,y):
         return chess.square(file, rank)
     return None
 
+def ai_move():
+    if board.is_game_over():
+        return
+
+    result = engine.play(board, chess.engine.Limit(time = 2))
+
+    board.push(result.move)
+    render_board()
+
 def main():
     global sq_selected
 
@@ -87,6 +100,7 @@ def main():
             val = term.inkey()
 
             if val.lower() == "q":
+                engine.quit()
                 break
 
             if val.is_sequence and val.name.startswith("MOUSE_"):
@@ -138,6 +152,10 @@ def main():
                             if move in board.legal_moves:
                                 board.push(move)
                                 sq_selected = None
+
+                                if not board.is_game_over():
+                                    ai_move()
+
                             elif board.piece_at(sq) and board.piece_at(sq).color == board.turn:
                                 sq_selected = sq
                             else:
