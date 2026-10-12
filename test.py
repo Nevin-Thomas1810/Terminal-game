@@ -1,9 +1,13 @@
 from blessed import Terminal
 import chess
 import chess.engine
-
+import time
 term = Terminal()
 board = chess.Board()
+
+WHITE_TIME = 5 * 60
+BLACK_TIME = 5 * 60
+last_time = time.monotonic()
 
 #PIECES
 PIECE = {
@@ -22,35 +26,54 @@ PIECE = {
 }
 #BOARD LOGIC
 sq_selected = None
+def format_time(seconds):
+    seconds = max(0, int(seconds))
+    minutes = seconds // 60
+    secs = seconds % 60
+    return f"{minutes:02}:{secs:02}"
+
+def show_clock():
+    print(f"{format_time(WHITE_TIME)} | {format_time(BLACK_TIME)}")
 
 def render_board(selected=None):
     print(term.clear)
     print(term.bold("----TERMINAL CHESS----\n"))
 
-    print("   a  b  c  d  e  f  g  h")
+    square_width = 5
+    square_height = 3
+    board_left = 2
+
+    print(" " * board_left + "".join(f"{chr(file + 97):^{7}}" for file in range(8)))
 
     for rank in reversed(range(8)):
-        line = f" {rank + 1}"
-        for file in range(8):
-            sq = chess.square(file, rank)
-            piece = board.piece_at(sq)
-            piece_str = PIECE[piece.symbol()] if piece else ' '
+        for row in range(square_height):
+            line = f"{rank + 1}" if row == square_height // 2 else ' '
 
-            is_dark = (rank + file) % 2 == 0
-            bg_color = term.on_black if is_dark else term.on_gray
+            for file in range(8):
+                sq = chess.square(file, rank)
+                piece = board.piece_at(sq)
+                piece_str = PIECE[piece.symbol()] if piece else ''
 
-            if selected == sq:
-                bg_color = term.on_yellow
-            elif selected is not None and chess.Move(selected, sq) in board.legal_moves:
-                bg_color = term.on_green
+                is_dark = (rank + file) % 2 == 0
+                bg_color = term.on_black if is_dark else term.on_gray
 
-            line += bg_color + f" {piece_str} " + term.normal
+                if selected == sq:
+                    bg_color = term.on_yellow
+                elif selected is not None and chess.Move(selected, sq) in board.legal_moves:
+                    bg_color = term.on_green
 
-        line += f" {rank+1}"
-        print(line)
+                if row == square_height // 2:
+                    cell = f"{piece_str:^{square_width}}"
+                else:
+                    cell = " "*square_width
 
-    print("   a  b  c  d  e  f  g  h\n")
+                line += bg_color + f" {cell} " + term.normal
 
+            line += f" {rank + 1}" if row == square_height // 2 else ""
+            print(line)
+    print(" " * board_left + "".join(f"{chr(file + 97):^{7}}" for file in range(8)))
+
+    show_clock()
     if board.is_checkmate():
         print(term.red_bold("CHECKMATE GAME OVER"))
 
@@ -71,33 +94,62 @@ engine = chess.engine.SimpleEngine.popen_uci(ENGINE_PATH)
 def parse_click(x,y):
 
     #COORDINATE LOGIC
-    board_top = 4
+    board_top = 3
     board_left = 2
-    rank = 7 - (y - board_top)
-    file = (x - board_left)//3
+    square_width = 7
+    square_height = 3
+    rank = 7 - ((y - board_top) // square_height)
+    file = (x - board_left)//square_width
 
     if 0 <= rank <= 7 and 0 <= file <= 7:
         return chess.square(file, rank)
     return None
 
 def ai_move():
+    global BLACK_TIME, last_time
     if board.is_game_over():
         return
 
+    ai_start = time.monotonic()
+
     result = engine.play(board, chess.engine.Limit(time = 2))
 
+    ai_elapsed = time.monotonic() - ai_start
+    BLACK_TIME -= ai_elapsed
+    last_time = time.monotonic()
+
+    if BLACK_TIME <= 0:
+        BLACK_TIME = 0
+        render_board()
+        print(term.red_bold("TIME OUT. WHITE WON."))
+        return
+    
     board.push(result.move)
     render_board()
 
 def main():
-    global sq_selected
+    global sq_selected, last_time, WHITE_TIME, BLACK_TIME
 
     with term.cbreak(), term.hidden_cursor(), term.mouse_enabled():
         render_board()
 
         #MOUSE LOGIC
         while True:
-            val = term.inkey()
+            val = term.inkey(timeout=0.1)
+
+            now = time.monotonic()
+            elapsed = now - last_time
+            last_time = now
+
+            if board.turn == chess.WHITE:
+                WHITE_TIME -= elapsed
+
+            if board.turn == chess.BLACK:
+                BLACK_TIME -= elapsed
+
+            if WHITE_TIME <= 0 or BLACK_TIME <= 0:
+                print("Time up")
+                break
 
             if val.lower() == "q":
                 engine.quit()
